@@ -1,5 +1,5 @@
 CREATE TABLE "public"."class" (
-    "class_no" text DEFAULT nextval('public.class_no_seq'::regclass) NOT NULL,
+    "class_no" integer DEFAULT nextval('public.class_no_seq'::regclass) NOT NULL,
     "class_name" text NOT NULL,
     "grade" integer NOT NULL,
     "student_limit" integer NOT NULL,
