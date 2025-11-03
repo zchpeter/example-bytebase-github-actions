@@ -4,6 +4,7 @@ CREATE TABLE "public"."student" (
     "first_name" text NOT NULL,
     "last_name" text NOT NULL,
     "gender" text NOT NULL,
+    "email" text NOT NULL,
     CONSTRAINT "student_pkey" PRIMARY KEY (student_no),
     CONSTRAINT "student_gender_check" CHECK (gender = ANY (ARRAY['M'::text, 'F'::text]))
 );
