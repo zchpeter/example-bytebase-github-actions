@@ -26,15 +26,19 @@ jobs:
             BYTEBASE_TARGETS: "instances/prod-sample-instance/databases/school_prod"
             FILE_PATTERN: "schema/*.sql"
         run: |
+          ls -la schema/
           docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
+            --add-host=host.docker.internal:host-gateway \
+            -v "${{ github.workspace }}":/workspace \
             -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
             -e BYTEBASE_URL="${{ env.BYTEBASE_URL }}" \
             -e BYTEBASE_SERVICE_ACCOUNT="${{ env.BYTEBASE_SERVICE_ACCOUNT }}" \
             -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ secrets.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGETS="${{ env.BYTEBASE_TARGETS }}" \
-            -e FILE_PATTERN="${{ env.FILE_PATTERN }}" \
+            -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            -e GITHUB_EVENT_NUMBER="${{ github.event.number }}" \
+            -e GITHUB_API_URL="${{ github.api_url }}" \
             -w /workspace \
             bytebase/bytebase-action:3.12.0 \
-            bytebase-action check --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --targets=${{ env.BYTEBASE_TARGETS }} --file-pattern=${{ env.FILE_PATTERN }}
+            sh -c "ls -la /workspace/schema/ && bytebase-action check --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --targets=${{ env.BYTEBASE_TARGETS }} --file-pattern=${{ env.FILE_PATTERN }} --declarative"
