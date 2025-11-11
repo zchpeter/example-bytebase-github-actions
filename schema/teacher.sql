@@ -3,5 +3,5 @@ CREATE TABLE "public"."teacher" (
     "first_name" text NOT NULL,
     "last_name" text NOT NULL,
     "email" text NOT NULL,
-    CONSTRAINT "teacher_pkey" PRIMARY KEY (student_no)
+    CONSTRAINT "teacher_pkey" PRIMARY KEY (teacher_no)
 );

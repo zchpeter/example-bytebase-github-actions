@@ -56,6 +56,7 @@ jobs:
             -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ env.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGETS="${{ env.BYTEBASE_TARGETS }}" \
+            -e GITHUB_ACTIONS=true \
             -w /workspace \
             bytebase/bytebase-action:3.12.0 \
             sh -c "ls -la /workspace/schema/ && bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --file-pattern=${{ env.FILE_PATTERN }} --targets=${{ env.BYTEBASE_TARGETS }} --declarative --output=/temp/bytebase-metadata.json"
@@ -84,6 +85,7 @@ jobs:
             -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ env.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGET_STAGE="${{ env.BYTEBASE_TARGET_STAGE }}" \
+            -e GITHUB_ACTIONS=true \
             -w /workspace \
             bytebase/bytebase-action:3.12.0 \
             bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --target-stage=${{ env.BYTEBASE_TARGET_STAGE }} --plan=${{ needs.create-rollout.outputs.bytebase-plan }}
@@ -113,6 +115,7 @@ jobs:
             -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ env.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGET_STAGE="${{ env.BYTEBASE_TARGET_STAGE }}" \
+            -e GITHUB_ACTIONS=true \
             -w /workspace \
             bytebase/bytebase-action:3.12.0 \
             bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --target-stage=${{ env.BYTEBASE_TARGET_STAGE }} --plan=${{ needs.create-rollout.outputs.bytebase-plan }}
