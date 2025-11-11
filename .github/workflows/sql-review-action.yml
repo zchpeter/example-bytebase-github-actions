@@ -39,6 +39,7 @@ jobs:
             -e GITHUB_REPOSITORY="${{ github.repository }}" \
             -e GITHUB_EVENT_NUMBER="${{ github.event.number }}" \
             -e GITHUB_API_URL="${{ github.api_url }}" \
+            -e GITHUB_ACTIONS=true \
             -w /workspace \
             bytebase/bytebase-action:3.12.0 \
             sh -c "ls -la /workspace/schema/ && bytebase-action check --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --targets=${{ env.BYTEBASE_TARGETS }} --file-pattern=${{ env.FILE_PATTERN }} --declarative"
