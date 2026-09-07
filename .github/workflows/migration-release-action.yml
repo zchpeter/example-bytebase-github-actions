@@ -58,6 +58,11 @@ jobs:
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGETS="${{ env.BYTEBASE_TARGETS }}" \
             -e GITHUB_ACTIONS=true \
+            -e GITHUB_STEP_SUMMARY=/github/step_summary \
+            -v "$GITHUB_STEP_SUMMARY":/github/step_summary \
+            -e GITHUB_SERVER_URL="${{ github.server_url }}" \
+            -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            -e GITHUB_SHA="${{ github.sha }}" \
             -w /workspace \
             bytebase/bytebase-action:"${{ env.BYTEBASE_VERSION }}" \
             sh -c "ls -la /workspace/migrations/ && bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --file-pattern=${{ env.FILE_PATTERN }} --targets=${{ env.BYTEBASE_TARGETS }} --output=/temp/bytebase-metadata.json"
@@ -87,6 +92,11 @@ jobs:
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGET_STAGE="${{ env.BYTEBASE_TARGET_STAGE }}" \
             -e GITHUB_ACTIONS=true \
+            -e GITHUB_STEP_SUMMARY=/github/step_summary \
+            -v "$GITHUB_STEP_SUMMARY":/github/step_summary \
+            -e GITHUB_SERVER_URL="${{ github.server_url }}" \
+            -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            -e GITHUB_SHA="${{ github.sha }}" \
             -w /workspace \
             bytebase/bytebase-action:"${{ env.BYTEBASE_VERSION }}" \
             bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --target-stage=${{ env.BYTEBASE_TARGET_STAGE }} --plan=${{ needs.create-rollout.outputs.bytebase-plan }}
@@ -117,6 +127,11 @@ jobs:
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGET_STAGE="${{ env.BYTEBASE_TARGET_STAGE }}" \
             -e GITHUB_ACTIONS=true \
+            -e GITHUB_STEP_SUMMARY=/github/step_summary \
+            -v "$GITHUB_STEP_SUMMARY":/github/step_summary \
+            -e GITHUB_SERVER_URL="${{ github.server_url }}" \
+            -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            -e GITHUB_SHA="${{ github.sha }}" \
             -w /workspace \
             bytebase/bytebase-action:"${{ env.BYTEBASE_VERSION }}" \
             bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --target-stage=${{ env.BYTEBASE_TARGET_STAGE }} --plan=${{ needs.create-rollout.outputs.bytebase-plan }}
