@@ -37,7 +37,9 @@ jobs:
             -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
             -e BYTEBASE_TARGETS="${{ env.BYTEBASE_TARGETS }}" \
             -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e GITHUB_EVENT_NUMBER="${{ github.event.number }}" \
+            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
+            -e GITHUB_EVENT_PATH=/github/workflow/event.json \
+            -v "${{ github.event_path }}":/github/workflow/event.json:ro \
             -e GITHUB_API_URL="${{ github.api_url }}" \
             -e GITHUB_ACTIONS=true \
             -w /workspace \
