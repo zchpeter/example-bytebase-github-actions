@@ -1,4 +1,4 @@
-name: Declarative rollout using bytebase-action image
+name: Declarative rollout using a local bytebase-action build
 
 on:
   push:
@@ -13,18 +13,19 @@ concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: true
 
+# The jobs run on a self-hosted runner that has a local Bytebase server and a
+# local bytebase-action build on its PATH. The runner sets every GITHUB_*
+# variable the action reads (event payload, commit, branch).
 env:
-  BYTEBASE_URL: http://host.docker.internal:18080
-  BYTEBASE_SERVICE_ACCOUNT: api@service.bytebase.com # set service account via environment variable
-  BYTEBASE_SERVICE_ACCOUNT_SECRET: ${{ secrets.BYTEBASE_SERVICE_ACCOUNT_SECRET }} # set service account secret via environment variable
-  BYTEBASE_PROJECT: "projects/project-test"
+  BYTEBASE_URL: http://localhost:8080
+  BYTEBASE_WORKLOAD_IDENTITY: github-gitops-wi@gitops-state-based.workload.bytebase.com
+  BYTEBASE_PROJECT: projects/gitops-state-based
 
 jobs:
   build:
     runs-on: self-hosted
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Build app and upload
         run: |
           echo "Building..."
@@ -33,38 +34,43 @@ jobs:
           echo "Upload done!"
   create-rollout:
     needs: build
-    # runs-on: ubuntu-latest # use self-hosted machines if your Bytebase runs in internal networks.
+    permissions:
+      id-token: write
     runs-on: self-hosted
     outputs:
       bytebase-plan: ${{ steps.set-output.outputs.plan }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Roll out database change
-        env:
-          BYTEBASE_TARGETS: "instances/test-sample-instance/databases/school_test,instances/prod-sample-instance/databases/school_prod"
-          FILE_PATTERN: "schema/*.sql"
-          BYTEBASE_OUTPUT: ${{ runner.temp }}/bytebase-metadata.json
+      - uses: actions/checkout@v4
+      - name: Exchange token
+        id: bytebase-auth
         run: |
-          ls -la schema/
-          docker run --rm \
-            --add-host=host.docker.internal:host-gateway \
-            -v "${{ github.workspace }}":/workspace \
-            -v "${{ runner.temp }}":/temp \
-            -e BYTEBASE_URL="${{ env.BYTEBASE_URL }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT="${{ env.BYTEBASE_SERVICE_ACCOUNT }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ env.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
-            -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
-            -e BYTEBASE_TARGETS="${{ env.BYTEBASE_TARGETS }}" \
-            -e GITHUB_ACTIONS=true \
-            -e GITHUB_STEP_SUMMARY=/github/step_summary \
-            -v "$GITHUB_STEP_SUMMARY":/github/step_summary \
-            -e GITHUB_SERVER_URL="${{ github.server_url }}" \
-            -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e GITHUB_SHA="${{ github.sha }}" \
-            -w /workspace \
-            bytebase/bytebase-action:3.13.1 \
-            sh -c "ls -la /workspace/schema/ && bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --file-pattern=${{ env.FILE_PATTERN }} --targets=${{ env.BYTEBASE_TARGETS }} --declarative --output=/temp/bytebase-metadata.json"
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=bytebase" | jq -r '.value // empty' 2>/dev/null || true)
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::error::Failed to get a GitHub OIDC token. Check that the job has the id-token: write permission."
+            exit 1
+          fi
+          RESPONSE=$(curl -s -X POST "$BYTEBASE_URL/v1/auth:exchangeToken" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"$OIDC_TOKEN\",\"email\":\"$BYTEBASE_WORKLOAD_IDENTITY\"}")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.accessToken // empty' 2>/dev/null || true)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Failed to exchange the OIDC token for a Bytebase access token: $RESPONSE"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access-token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+      - name: Create rollout
+        env:
+          BYTEBASE_ACCESS_TOKEN: ${{ steps.bytebase-auth.outputs.access-token }}
+        run: |
+          bytebase-action rollout \
+            --url=$BYTEBASE_URL \
+            --project=$BYTEBASE_PROJECT \
+            --targets=projects/gitops-state-based/databaseGroups/bb-gitops-state-lezh \
+            --file-pattern=schema/*.sql \
+            --declarative \
+            --output=${{ runner.temp }}/bytebase-metadata.json
       - name: Set output
         id: set-output
         run: |
@@ -72,69 +78,75 @@ jobs:
           echo "plan=$PLAN" >> $GITHUB_OUTPUT
   deploy-to-test:
     needs: create-rollout
-    # runs-on: ubuntu-latest # use self-hosted machines if your Bytebase runs in internal networks.
+    permissions:
+      id-token: write
     runs-on: self-hosted
     environment: test
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Roll out database change
+      - uses: actions/checkout@v4
+      - name: Exchange token
+        id: bytebase-auth
+        run: |
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=bytebase" | jq -r '.value // empty' 2>/dev/null || true)
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::error::Failed to get a GitHub OIDC token. Check that the job has the id-token: write permission."
+            exit 1
+          fi
+          RESPONSE=$(curl -s -X POST "$BYTEBASE_URL/v1/auth:exchangeToken" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"$OIDC_TOKEN\",\"email\":\"$BYTEBASE_WORKLOAD_IDENTITY\"}")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.accessToken // empty' 2>/dev/null || true)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Failed to exchange the OIDC token for a Bytebase access token: $RESPONSE"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access-token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+      - name: Deploy to test
         env:
-          BYTEBASE_TARGET_STAGE: environments/test
+          BYTEBASE_ACCESS_TOKEN: ${{ steps.bytebase-auth.outputs.access-token }}
         run: |
-          docker run --rm \
-            --add-host=host.docker.internal:host-gateway \
-            -v "${{ github.workspace }}":/workspace \
-            -e BYTEBASE_URL="${{ env.BYTEBASE_URL }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT="${{ env.BYTEBASE_SERVICE_ACCOUNT }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ env.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
-            -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
-            -e BYTEBASE_TARGET_STAGE="${{ env.BYTEBASE_TARGET_STAGE }}" \
-            -e GITHUB_ACTIONS=true \
-            -e GITHUB_STEP_SUMMARY=/github/step_summary \
-            -v "$GITHUB_STEP_SUMMARY":/github/step_summary \
-            -e GITHUB_SERVER_URL="${{ github.server_url }}" \
-            -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e GITHUB_SHA="${{ github.sha }}" \
-            -w /workspace \
-            bytebase/bytebase-action:3.13.1 \
-            bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --target-stage=${{ env.BYTEBASE_TARGET_STAGE }} --plan=${{ needs.create-rollout.outputs.bytebase-plan }}
-      - name: Deploy app
-        run: |
-          echo "Deploying app to test environment..."
-          echo "Deploy app to test environment done!"
+          bytebase-action rollout \
+            --url=$BYTEBASE_URL \
+            --project=$BYTEBASE_PROJECT \
+            --target-stage=environments/test \
+            --plan=${{ needs.create-rollout.outputs.bytebase-plan }}
   deploy-to-prod:
     needs:
       - deploy-to-test
       - create-rollout
-    # runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     runs-on: self-hosted
     environment: prod
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: rollout
+      - uses: actions/checkout@v4
+      - name: Exchange token
+        id: bytebase-auth
+        run: |
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=bytebase" | jq -r '.value // empty' 2>/dev/null || true)
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::error::Failed to get a GitHub OIDC token. Check that the job has the id-token: write permission."
+            exit 1
+          fi
+          RESPONSE=$(curl -s -X POST "$BYTEBASE_URL/v1/auth:exchangeToken" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"$OIDC_TOKEN\",\"email\":\"$BYTEBASE_WORKLOAD_IDENTITY\"}")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.accessToken // empty' 2>/dev/null || true)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Failed to exchange the OIDC token for a Bytebase access token: $RESPONSE"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access-token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+      - name: Deploy to prod
         env:
-          BYTEBASE_TARGET_STAGE: environments/prod
+          BYTEBASE_ACCESS_TOKEN: ${{ steps.bytebase-auth.outputs.access-token }}
         run: |
-          docker run --rm \
-            --add-host=host.docker.internal:host-gateway \
-            -v "${{ github.workspace }}":/workspace \
-            -e BYTEBASE_URL="${{ env.BYTEBASE_URL }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT="${{ env.BYTEBASE_SERVICE_ACCOUNT }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ env.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
-            -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
-            -e BYTEBASE_TARGET_STAGE="${{ env.BYTEBASE_TARGET_STAGE }}" \
-            -e GITHUB_ACTIONS=true \
-            -e GITHUB_STEP_SUMMARY=/github/step_summary \
-            -v "$GITHUB_STEP_SUMMARY":/github/step_summary \
-            -e GITHUB_SERVER_URL="${{ github.server_url }}" \
-            -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e GITHUB_SHA="${{ github.sha }}" \
-            -w /workspace \
-            bytebase/bytebase-action:3.13.1 \
-            bytebase-action rollout --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --target-stage=${{ env.BYTEBASE_TARGET_STAGE }} --plan=${{ needs.create-rollout.outputs.bytebase-plan }}
-      - name: Deploy app
-        run: |
-          echo "Deploying app to prod environment..."
-          echo "Deploy app to prod environment done!"
+          bytebase-action rollout \
+            --url=$BYTEBASE_URL \
+            --project=$BYTEBASE_PROJECT \
+            --target-stage=environments/prod \
+            --plan=${{ needs.create-rollout.outputs.bytebase-plan }}

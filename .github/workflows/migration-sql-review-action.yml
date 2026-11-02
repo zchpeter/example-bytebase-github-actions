@@ -1,48 +1,49 @@
-name: Migration SQL review on pull request using bytebase-action image
+name: Migration SQL review on pull request using a local bytebase-action build
 
 on:
   pull_request:
     branches:
       - main
     paths:
-      - "migrations/*.sql"
+      - "migrations/**/*.sql"
 
 jobs:
-  check-release-on-prod:
+  sql-review-prod:
     permissions:
-        pull-requests: write # write permission required to allow the action writes the check results to the comment.
-    # runs-on: ubuntu-latest # use self-hosted machines if your Bytebase runs in internal networks.
+      id-token: write
+      pull-requests: write # the check writes its results to a pull request comment.
     runs-on: self-hosted
+    env:
+      BYTEBASE_URL: http://localhost:8080
+      BYTEBASE_WORKLOAD_IDENTITY: github-gitops-wi@gitops-migration-based.workload.bytebase.com
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Check release
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # set GITHUB_TOKEN because the 'Check release' step needs it to comment the pull request with check results.
-            BYTEBASE_URL: http://host.docker.internal:18080
-            BYTEBASE_SERVICE_ACCOUNT: api@service.bytebase.com # set service account via environment variable
-            BYTEBASE_SERVICE_ACCOUNT_SECRET: ${{ secrets.BYTEBASE_SERVICE_ACCOUNT_SECRET }} # set service account secret via environment variable
-            BYTEBASE_PROJECT: "projects/project-sample"
-            BYTEBASE_TARGETS: "instances/prod-sample-instance/databases/hr_prod"
-            BYTEBASE_VERSION: "3.14.0"
-            FILE_PATTERN: "migrations/*.sql"
+      - uses: actions/checkout@v4
+      - name: Exchange token
+        id: bytebase-auth
         run: |
-          ls -la migrations/
-          docker run --rm \
-            --add-host=host.docker.internal:host-gateway \
-            -v "${{ github.workspace }}":/workspace \
-            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            -e BYTEBASE_URL="${{ env.BYTEBASE_URL }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT="${{ env.BYTEBASE_SERVICE_ACCOUNT }}" \
-            -e BYTEBASE_SERVICE_ACCOUNT_SECRET="${{ secrets.BYTEBASE_SERVICE_ACCOUNT_SECRET }}" \
-            -e BYTEBASE_PROJECT="${{ env.BYTEBASE_PROJECT }}" \
-            -e BYTEBASE_TARGETS="${{ env.BYTEBASE_TARGETS }}" \
-            -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
-            -e GITHUB_EVENT_PATH=/github/workflow/event.json \
-            -v "${{ github.event_path }}":/github/workflow/event.json:ro \
-            -e GITHUB_API_URL="${{ github.api_url }}" \
-            -e GITHUB_ACTIONS=true \
-            -w /workspace \
-            bytebase/bytebase-action:"${{ env.BYTEBASE_VERSION }}" \
-            sh -c "ls -la /workspace/migrations/ && bytebase-action check --url=${{ env.BYTEBASE_URL }} --project=${{ env.BYTEBASE_PROJECT }} --targets=${{ env.BYTEBASE_TARGETS }} --file-pattern=${{ env.FILE_PATTERN }}"
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=bytebase" | jq -r '.value // empty' 2>/dev/null || true)
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::error::Failed to get a GitHub OIDC token. Check that the job has the id-token: write permission."
+            exit 1
+          fi
+          RESPONSE=$(curl -s -X POST "$BYTEBASE_URL/v1/auth:exchangeToken" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"$OIDC_TOKEN\",\"email\":\"$BYTEBASE_WORKLOAD_IDENTITY\"}")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.accessToken // empty' 2>/dev/null || true)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Failed to exchange the OIDC token for a Bytebase access token: $RESPONSE"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access-token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+      - name: SQL Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BYTEBASE_ACCESS_TOKEN: ${{ steps.bytebase-auth.outputs.access-token }}
+        run: |
+          bytebase-action check \
+            --url=$BYTEBASE_URL \
+            --project=projects/gitops-migration-based \
+            --targets=projects/gitops-migration-based/databaseGroups/bb-gitops-migration-dc2x \
+            --file-pattern=migrations/**/*.sql
