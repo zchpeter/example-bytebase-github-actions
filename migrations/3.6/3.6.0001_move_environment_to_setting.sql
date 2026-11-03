@@ -30,6 +30,4 @@ INSERT INTO setting (
 ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value;
 
 
-INSERT INTO setting (name, value) VALUES ('bb.workspace.environment-backup', NULL);
-
 DROP TABLE IF EXISTS environment;
