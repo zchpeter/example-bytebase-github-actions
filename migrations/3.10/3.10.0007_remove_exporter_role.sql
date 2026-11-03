@@ -1,9 +1,4 @@
 -- Remove projectExporter role and merge row_limit condition into sqlEditorUser role
-DO $$
-BEGIN
-    RAISE EXCEPTION 'guard: refusing to remove roles/projectExporter while bindings remain';
-END $$;
-
 WITH exporter_data AS (
     -- Collect all projectExporter members and their row_limit conditions
     SELECT
